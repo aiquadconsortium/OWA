@@ -27,6 +27,14 @@ import { SessionEngineLeafEvents } from './session-engine-leaf-events';
 import { SessionEngineEventWiring, SessionEngineWiringHost } from './session-engine-event-wiring';
 import { SessionEngineControls } from './session-engine-controls';
 
+/**
+ * Eager status-history reads are opt-in. On affected freshly paired whatsapp-web.js accounts,
+ * fetching status@broadcast before WhatsApp Web's first scheduled reload makes WhatsApp revoke the
+ * companion at that reload. Live status events remain unaffected when this backfill is disabled.
+ */
+const isStatusSeedOnReadyEnabled = (): boolean =>
+  ['true', '1', 'yes', 'on'].includes((process.env.STATUS_SEED_ON_READY ?? 'false').trim().toLowerCase());
+
 // Message types that carry downloadable media. Any persisted row of these types must have a media
 // marker in metadata — never NULL — or the dashboard renders an empty bubble (no placeholder) and the
 // by-type stats filter skips the row. Sources that lack the payload (wwjs own-send echo, media-free
@@ -597,7 +605,14 @@ export class SessionEngineLifecycle {
     // Best-effort snapshot of the account's own contacts' currently-active statuses. Live status
     // posts arrive through onMessage below; this just backfills what was already up before we
     // connected. Not awaited — onReady must not block on it.
-    void this.seedStatuses(id, engine);
+    if (isStatusSeedOnReadyEnabled()) {
+      void this.seedStatuses(id, engine);
+    } else {
+      this.logger.debug('Status backfill on session ready is disabled', {
+        sessionId: id,
+        action: 'status_seed_on_ready_disabled',
+      });
+    }
   }
 
   /**
